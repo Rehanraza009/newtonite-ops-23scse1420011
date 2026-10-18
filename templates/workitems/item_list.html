@@ -1,0 +1,272 @@
+{% extends 'base.html' %}
+
+{% block title %}Work Items — Newtonite Operations Hub{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Work Items</h1>
+    <p class="page-subtitle">Search, filter, and track operations tickets across teams</p>
+  </div>
+  <div>
+    <a href="{% url 'work_item_create' %}" class="btn btn-primary">+ Create Work Item</a>
+  </div>
+</div>
+
+<!-- Server-side Filter Bar -->
+<div class="filter-bar">
+  <input type="text" id="search-input" class="form-input search-input" placeholder="Search title or description..." value="{{ request.GET.q|default:'' }}">
+
+  <select id="team-filter" class="form-select filter-select">
+    <option value="">All Teams</option>
+    {% for team in teams %}
+    <option value="{{ team.id }}" {% if request.GET.team == team.id|stringformat:"s" %}selected{% endif %}>
+      {{ team.name }}{% if team.is_restricted %} 🔒{% endif %}
+    </option>
+    {% endfor %}
+  </select>
+
+  <select id="status-filter" class="form-select filter-select">
+    <option value="">All Statuses</option>
+    {% for val, label in statuses %}
+    <option value="{{ val }}" {% if request.GET.status == val %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+
+  <select id="priority-filter" class="form-select filter-select">
+    <option value="">All Priorities</option>
+    {% for val, label in priorities %}
+    <option value="{{ val }}" {% if request.GET.priority == val %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+
+  <select id="type-filter" class="form-select filter-select">
+    <option value="">All Types</option>
+    {% for val, label in types %}
+    <option value="{{ val }}" {% if request.GET.type == val %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+
+  <select id="assignee-filter" class="form-select filter-select">
+    <option value="">All Assignees</option>
+    <option value="me" {% if request.GET.assignee == 'me' %}selected{% endif %}>Assigned to Me</option>
+    <option value="unassigned" {% if request.GET.assignee == 'unassigned' %}selected{% endif %}>Unassigned Only</option>
+  </select>
+
+  <button type="button" class="btn btn-secondary" onclick="applyFilters()">Filter</button>
+  <button type="button" class="btn btn-secondary" onclick="resetFilters()">Reset</button>
+</div>
+
+<!-- Dynamic Table Container -->
+<div class="card">
+  <div class="card-body" style="padding: 0;">
+    <div id="table-loading" style="display: none; padding: 2rem; text-align: center; color: var(--text-secondary);">
+      Loading work items from server...
+    </div>
+
+    <div class="table-responsive">
+      <table class="data-table" id="items-table">
+        <thead>
+          <tr>
+            <th style="width: 70px;">ID</th>
+            <th>Title</th>
+            <th>Team</th>
+            <th>Type</th>
+            <th>Priority</th>
+            <th>Status</th>
+            <th>Assignee</th>
+            <th>Version</th>
+            <th>Created</th>
+          </tr>
+        </thead>
+        <tbody id="items-tbody">
+          <!-- Populated by JavaScript -->
+        </tbody>
+      </table>
+    </div>
+
+    <div id="empty-state" style="display: none; padding: 3rem 1rem; text-align: center; color: var(--text-muted);">
+      <div style="font-size: 2rem; margin-bottom: 0.5rem;">🔍</div>
+      <p style="font-size: 1rem; font-weight: 600; color: var(--text-primary);">No matching work items found</p>
+      <p style="font-size: 0.85rem; margin-top: 0.25rem;">Try adjusting your search criteria or filters.</p>
+    </div>
+
+    <div class="pagination" id="pagination-container">
+      <div class="pagination-info" id="pagination-info">
+        Showing 0 items
+      </div>
+      <div class="pagination-controls" id="pagination-controls">
+        <!-- Pagination buttons -->
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  let currentPage = 1;
+
+  async function loadItems(page = 1) {
+    currentPage = page;
+    const searchInput = document.getElementById('search-input').value.trim();
+    const teamFilter = document.getElementById('team-filter').value;
+    const statusFilter = document.getElementById('status-filter').value;
+    const priorityFilter = document.getElementById('priority-filter').value;
+    const typeFilter = document.getElementById('type-filter').value;
+    const assigneeFilter = document.getElementById('assignee-filter').value;
+
+    const params = new URLSearchParams();
+    if (searchInput) params.append('q', searchInput);
+    if (teamFilter) params.append('team', teamFilter);
+    if (statusFilter) params.append('status', statusFilter);
+    if (priorityFilter) params.append('priority', priorityFilter);
+    if (typeFilter) params.append('type', typeFilter);
+    if (assigneeFilter) params.append('assignee', assigneeFilter);
+    params.append('page', page);
+
+    const tbody = document.getElementById('items-tbody');
+    const loading = document.getElementById('table-loading');
+    const emptyState = document.getElementById('empty-state');
+    const paginationContainer = document.getElementById('pagination-container');
+
+    loading.style.display = 'block';
+    tbody.innerHTML = '';
+    emptyState.style.display = 'none';
+
+    try {
+      const response = await fetch(`/api/items/?${params.toString()}`);
+      const data = await response.json();
+      loading.style.display = 'none';
+
+      if (!response.ok) {
+        showAlert(data.message || 'Failed to fetch items', 'error');
+        return;
+      }
+
+      const results = data.results || [];
+      if (results.length === 0) {
+        emptyState.style.display = 'block';
+        paginationContainer.style.display = 'none';
+        return;
+      }
+
+      paginationContainer.style.display = 'flex';
+      renderRows(results);
+      renderPagination(data.count, page);
+    } catch (err) {
+      loading.style.display = 'none';
+      showAlert(`Network error: ${err.message}`, 'error');
+    }
+  }
+
+  function renderRows(items) {
+    const tbody = document.getElementById('items-tbody');
+    tbody.innerHTML = items.map(item => `
+      <tr>
+        <td>
+          <a href="/items/${item.id}/" style="font-family: var(--font-mono); font-weight: 600;">#${item.id}</a>
+        </td>
+        <td>
+          <a href="/items/${item.id}/" style="font-weight: 600; color: var(--text-primary);">
+            ${escapeHtml(item.title)}
+          </a>
+        </td>
+        <td>
+          <span class="badge badge-type">${escapeHtml(item.team ? item.team.name : 'N/A')}</span>
+        </td>
+        <td>
+          <span class="badge badge-type">${escapeHtml(item.type)}</span>
+        </td>
+        <td>
+          <span class="badge badge-priority-${item.priority}">${escapeHtml(item.priority)}</span>
+        </td>
+        <td>
+          <span class="badge badge-status-${item.status}">${escapeHtml(item.status.replace('_', ' '))}</span>
+        </td>
+        <td style="color: var(--text-secondary);">
+          ${item.assignee ? `<span title="${escapeHtml(item.assignee.full_name || '')}">👤 ${escapeHtml(item.assignee.username)}</span>` : '<span style="color: var(--text-muted); font-style: italic;">Unassigned</span>'}
+        </td>
+        <td style="font-family: var(--font-mono); color: var(--text-muted); font-size: 0.8rem;">
+          v${item.version}
+        </td>
+        <td style="color: var(--text-secondary); font-size: 0.8rem;">
+          ${item.created_at ? item.created_at.substring(0, 16) : ''}
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function renderPagination(totalCount, currentPage) {
+    const pageSize = 10;
+    const totalPages = Math.ceil(totalCount / pageSize) || 1;
+    const startItem = totalCount === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+    const endItem = Math.min(currentPage * pageSize, totalCount);
+
+    document.getElementById('pagination-info').innerText =
+      `Showing ${startItem}–${endItem} of ${totalCount} work items (Page ${currentPage} of ${totalPages})`;
+
+    const controls = document.getElementById('pagination-controls');
+    let btns = '';
+
+    if (currentPage > 1) {
+      btns += `<button class="btn btn-secondary btn-sm" onclick="loadItems(${currentPage - 1})">&larr; Prev</button>`;
+    } else {
+      btns += `<button class="btn btn-secondary btn-sm" disabled>&larr; Prev</button>`;
+    }
+
+    if (currentPage < totalPages) {
+      btns += `<button class="btn btn-secondary btn-sm" onclick="loadItems(${currentPage + 1})">Next &rarr;</button>`;
+    } else {
+      btns += `<button class="btn btn-secondary btn-sm" disabled>Next &rarr;</button>`;
+    }
+
+    controls.innerHTML = btns;
+  }
+
+  function applyFilters() {
+    loadItems(1);
+  }
+
+  function resetFilters() {
+    document.getElementById('search-input').value = '';
+    document.getElementById('team-filter').value = '';
+    document.getElementById('status-filter').value = '';
+    document.getElementById('priority-filter').value = '';
+    document.getElementById('type-filter').value = '';
+    document.getElementById('assignee-filter').value = '';
+    loadItems(1);
+  }
+
+  function escapeHtml(text) {
+    if (!text) return '';
+    return text.toString()
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  // Allow pressing Enter in search box
+  document.getElementById('search-input').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+      applyFilters();
+    }
+  });
+
+  // Initial load
+  document.addEventListener('DOMContentLoaded', () => {
+    // Check URL search params
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('q')) document.getElementById('search-input').value = urlParams.get('q');
+    if (urlParams.get('team')) document.getElementById('team-filter').value = urlParams.get('team');
+    if (urlParams.get('status')) document.getElementById('status-filter').value = urlParams.get('status');
+    if (urlParams.get('priority')) document.getElementById('priority-filter').value = urlParams.get('priority');
+    if (urlParams.get('type')) document.getElementById('type-filter').value = urlParams.get('type');
+    if (urlParams.get('assignee')) document.getElementById('assignee-filter').value = urlParams.get('assignee');
+
+    loadItems(1);
+  });
+</script>
+{% endblock %}

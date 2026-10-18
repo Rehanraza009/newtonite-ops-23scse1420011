@@ -1,0 +1,220 @@
+{% extends 'base.html' %}
+
+{% block title %}
+  {% if is_edit %}Edit #{{ item.id }} — Newtonite Operations Hub{% else %}Create Work Item — Newtonite Operations Hub{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">
+      {% if is_edit %}Edit Work Item #{{ item.id }}{% else %}Create New Work Item{% endif %}
+    </h1>
+    <p class="page-subtitle">
+      {% if is_edit %}Modify details with optimistic locking protection{% else %}Triage a new operational incident, task, or customer issue{% endif %}
+    </p>
+  </div>
+  <div>
+    <a href="{% if is_edit %}{% url 'work_item_detail' item.id %}{% else %}{% url 'work_item_list' %}{% endif %}" class="btn btn-secondary">
+      Cancel
+    </a>
+  </div>
+</div>
+
+<div class="card" style="max-width: 800px; margin: 0 auto;">
+  <div class="card-header">
+    <span class="card-title">
+      {% if is_edit %}Item Specification (Current Version: v{{ item.version }}){% else %}Work Item Details{% endif %}
+    </span>
+  </div>
+  <div class="card-body">
+    <form id="item-form" onsubmit="{% if is_edit %}handleItemUpdate(event, {{ item.id }}){% else %}handleItemCreate(event){% endif %}">
+      {% csrf_token %}
+      {% if is_edit %}
+      <input type="hidden" name="version" id="item-version" value="{{ item.version }}">
+      {% endif %}
+
+      <div class="form-group">
+        <label class="form-label form-label-required" for="item-title">Title</label>
+        <input type="text" id="item-title" name="title" class="form-input" required
+               placeholder="Brief, descriptive title of the operation"
+               value="{% if is_edit %}{{ item.title }}{% endif %}">
+      </div>
+
+      <div class="form-grid-2">
+        {% if not is_edit %}
+        <div class="form-group">
+          <label class="form-label form-label-required" for="item-team">Team</label>
+          <select id="item-team" name="team_id" class="form-select" required onchange="loadTeamMembers(this.value)">
+            <option value="">Select Responsible Team...</option>
+            {% for t in teams %}
+            <option value="{{ t.id }}">{{ t.name }}{% if t.is_restricted %} 🔒 (Restricted){% endif %}</option>
+            {% endfor %}
+          </select>
+          <div class="form-help">Only teams where you hold Member/Lead/Admin permissions can accept new items.</div>
+        </div>
+        {% else %}
+        <div class="form-group">
+          <label class="form-label">Team</label>
+          <input type="text" class="form-input" value="{{ item.team.name }}" disabled>
+        </div>
+        {% endif %}
+
+        <div class="form-group">
+          <label class="form-label form-label-required" for="item-type">Type</label>
+          <select id="item-type" name="type" class="form-select" required>
+            {% for val, label in types %}
+            <option value="{{ val }}" {% if is_edit and item.type == val %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="form-grid-2">
+        <div class="form-group">
+          <label class="form-label form-label-required" for="item-priority">Priority</label>
+          <select id="item-priority" name="priority" class="form-select" required>
+            {% for val, label in priorities %}
+            <option value="{{ val }}" {% if is_edit and item.priority == val %}selected{% elif not is_edit and val == 'medium' %}selected{% endif %}>
+              {{ label }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="item-assignee">Assignee (Optional)</label>
+          <select id="item-assignee" name="assignee_id" class="form-select">
+            <option value="">Unassigned (Open for Claim)</option>
+            {% if is_edit %}
+              {% for u in team_members %}
+              <option value="{{ u.id }}" {% if item.assignee_id == u.id %}selected{% endif %}>
+                {{ u.get_full_name|default:u.username }} ({{ u.username }})
+              </option>
+              {% endfor %}
+            {% endif %}
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="item-due-date">Due Date / Target SLA (Optional)</label>
+        <input type="datetime-local" id="item-due-date" name="due_date" class="form-input"
+               value="{% if is_edit and item.due_date %}{{ item.due_date|date:'Y-m-d\TH:i' }}{% endif %}">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="item-description">Description & Operational Context</label>
+        <textarea id="item-description" name="description" class="form-textarea"
+                  placeholder="Detail the root problem, affected services, error traces, or acceptance criteria...">{% if is_edit %}{{ item.description }}{% endif %}</textarea>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem; border-top: 1px solid var(--border-default); padding-top: 1.25rem;">
+        <a href="{% if is_edit %}{% url 'work_item_detail' item.id %}{% else %}{% url 'work_item_list' %}{% endif %}" class="btn btn-secondary">
+          Cancel
+        </a>
+        <button type="submit" id="submit-btn" class="btn btn-primary">
+          {% if is_edit %}Save Changes{% else %}Create Work Item{% endif %}
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  // Dynamic team member loading for create form
+  async function loadTeamMembers(teamId) {
+    const assigneeSelect = document.getElementById('item-assignee');
+    if (!assigneeSelect) return;
+    assigneeSelect.innerHTML = '<option value="">Unassigned (Open for Claim)</option>';
+    if (!teamId) return;
+
+    try {
+      const response = await fetch(`/api/teams/${teamId}/members/`);
+      if (response.ok) {
+        const members = await response.json();
+        members.forEach(m => {
+          const opt = document.createElement('option');
+          opt.value = m.id;
+          opt.textContent = `${m.full_name || m.username} (${m.role})`;
+          assigneeSelect.appendChild(opt);
+        });
+      }
+    } catch (e) {
+      console.warn("Could not load team members", e);
+    }
+  }
+
+  // Idempotent creation handler
+  async function handleItemCreate(event) {
+    event.preventDefault();
+    const form = event.target;
+    const submitBtn = document.getElementById('submit-btn');
+
+    const title = form.elements['title'].value.trim();
+    const teamId = form.elements['team_id'].value;
+    const type = form.elements['type'].value;
+    const priority = form.elements['priority'].value;
+    const assigneeId = form.elements['assignee_id'].value || null;
+    const dueDate = form.elements['due_date'].value || null;
+    const description = form.elements['description'].value.trim();
+
+    // Generate unique idempotency key for this creation attempt
+    const idempotencyKey = 'client-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerText = "Creating work item...";
+    }
+
+    try {
+      const response = await fetch('/api/items/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': CSRF_TOKEN,
+          'Idempotency-Key': idempotencyKey,
+        },
+        body: JSON.stringify({
+          title,
+          team_id: teamId,
+          type,
+          priority,
+          assignee_id: assigneeId,
+          due_date: dueDate,
+          description,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        showAlert("Work item created successfully!", "success");
+        setTimeout(() => {
+          window.location.href = `/items/${data.id}/`;
+        }, 600);
+      } else if (response.status === 403) {
+        showAlert(`Forbidden: ${data.message || 'You lack permission to create items in this team.'}`, 'error');
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerText = "Create Work Item";
+        }
+      } else {
+        showAlert(`Error: ${JSON.stringify(data)}`, 'error');
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerText = "Create Work Item";
+        }
+      }
+    } catch (err) {
+      showAlert(`Network error: ${err.message}`, 'error');
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerText = "Create Work Item";
+      }
+    }
+  }
+</script>
+{% endblock %}

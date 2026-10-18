@@ -1,0 +1,87 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Newtonite Operations Hub{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'css/app.css' %}">
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  {% if user.is_authenticated %}
+  <header class="app-header">
+    <div class="brand-section">
+      <a href="{% url 'dashboard' %}" class="brand-logo">
+        <span>⚡ Newtonite Ops</span>
+        <span class="brand-badge">Hub</span>
+      </a>
+      <nav>
+        <ul class="nav-links">
+          <li><a href="{% url 'dashboard' %}" class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">Dashboard</a></li>
+          <li><a href="{% url 'work_item_list' %}" class="nav-link {% if request.resolver_match.url_name == 'work_item_list' %}active{% endif %}">Work Items</a></li>
+        </ul>
+      </nav>
+    </div>
+
+    <div class="user-section">
+      <a href="{% url 'work_item_create' %}" class="btn btn-primary btn-sm">
+        + New Item
+      </a>
+
+      <div class="user-pill" title="Signed in as {{ user.username }}">
+        <div class="user-avatar">{{ user.username|slice:":1"|upper }}</div>
+        <div class="user-meta">
+          <span class="user-name">{{ user.username }}</span>
+          <span class="user-role">{{ user.job_title|default:"Operations" }}</span>
+        </div>
+      </div>
+
+      <a href="{% url 'logout' %}" class="btn btn-secondary btn-sm" title="Sign out">
+        Sign Out
+      </a>
+    </div>
+  </header>
+  {% endif %}
+
+  <main class="main-container">
+    {% if messages %}
+    <div class="messages-container">
+      {% for message in messages %}
+      <div class="alert alert-{{ message.tags|default:'info' }}">
+        {{ message }}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- Global Transition Modal -->
+  <div id="transition-modal" class="modal-backdrop" style="display: none;">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3 class="modal-title" style="font-size: 1.1rem; font-weight: 700;">Confirm Status Transition</h3>
+        <button type="button" onclick="closeTransitionModal()" style="background:none; border:none; color:var(--text-secondary); font-size:1.4rem; cursor:pointer;">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="margin-bottom: 0.85rem; font-size: 0.9rem;">
+          You are changing the workflow status to: <strong id="modal-transition-target" style="color: var(--text-link);"></strong>.
+        </p>
+        <div class="form-group" style="margin-bottom: 0;">
+          <label class="form-label" for="modal-transition-note">Review / Transition Note (Optional):</label>
+          <textarea id="modal-transition-note" class="form-textarea" placeholder="Provide operational context, approval reason, or verification details..." style="min-height: 80px;"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeTransitionModal()">Cancel</button>
+        <button type="button" id="modal-transition-submit-btn" class="btn btn-primary" onclick="confirmTransition()">Confirm Transition</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="{% static 'js/app.js' %}"></script>
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

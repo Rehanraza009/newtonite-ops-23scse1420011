@@ -1,0 +1,43 @@
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: newtonite_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: newtonite_ops
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: root
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d newtonite_ops"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build: .
+    container_name: newtonite_web
+    restart: unless-stopped
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - SECRET_KEY=django-insecure-newtonite-dev-secret-key-operations-under-pressure-2026
+      - DEBUG=True
+      - ALLOWED_HOSTS=*
+      - DB_NAME=newtonite_ops
+      - DB_USER=postgres
+      - DB_PASSWORD=root
+      - DB_HOST=db
+      - DB_PORT=5432
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

@@ -1,0 +1,212 @@
+{% extends 'base.html' %}
+
+{% block title %}Dashboard — Newtonite Operations Hub{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Operations Command Center</h1>
+    <p class="page-subtitle">Real-time triage, urgent claims, and workflow authorization</p>
+  </div>
+  <div>
+    <a href="{% url 'work_item_create' %}" class="btn btn-primary">+ Create Work Item</a>
+  </div>
+</div>
+
+<!-- Operational Summary Metrics -->
+<div class="stats-grid">
+  <div class="stat-card">
+    <span class="stat-label">Active Work Items</span>
+    <span class="stat-value">{{ stats.total_active }}</span>
+    <span class="stat-subtext">Across accessible teams</span>
+  </div>
+
+  <div class="stat-card" style="border-left: 4px solid var(--color-brand);">
+    <span class="stat-label">Assigned to Me</span>
+    <span class="stat-value" style="color: var(--color-brand);">{{ stats.my_open_items }}</span>
+    <span class="stat-subtext">Requiring your attention</span>
+  </div>
+
+  <div class="stat-card" style="border-left: 4px solid var(--color-danger);">
+    <span class="stat-label">Unassigned Urgent</span>
+    <span class="stat-value" style="color: var(--color-danger-text);">{{ stats.unassigned_urgent }}</span>
+    <span class="stat-subtext">Ready for immediate claim</span>
+  </div>
+
+  <div class="stat-card" style="border-left: 4px solid var(--color-purple);">
+    <span class="stat-label">Awaiting My Approval</span>
+    <span class="stat-value" style="color: var(--color-purple-text);">{{ stats.awaiting_approval }}</span>
+    <span class="stat-subtext">Lead / Admin sign-off required</span>
+  </div>
+</div>
+
+<!-- Section 1: Unassigned Urgent Items (Pressure Triage) -->
+<div class="card" style="border-top: 3px solid var(--color-danger);">
+  <div class="card-header">
+    <h2 class="card-title" style="color: var(--color-danger-text);">
+      🚨 Unassigned Urgent Queue
+    </h2>
+    <span style="font-size: 0.8rem; color: var(--text-secondary);">High & Urgent priority items requiring immediate owner</span>
+  </div>
+  <div class="card-body" style="padding: 0;">
+    {% if unassigned_urgent %}
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th style="width: 80px;">ID</th>
+            <th>Title</th>
+            <th>Team</th>
+            <th>Type</th>
+            <th>Priority</th>
+            <th>Due Date</th>
+            <th style="text-align: right;">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in unassigned_urgent %}
+          <tr>
+            <td><a href="{% url 'work_item_detail' item.id %}" style="font-family: var(--font-mono); font-weight: 600;">#{{ item.id }}</a></td>
+            <td>
+              <a href="{% url 'work_item_detail' item.id %}" style="font-weight: 600; color: var(--text-primary);">
+                {{ item.title }}
+              </a>
+            </td>
+            <td>
+              <span class="badge badge-type">{{ item.team.name }}</span>
+            </td>
+            <td>
+              <span class="badge badge-type">{{ item.get_type_display }}</span>
+            </td>
+            <td>
+              <span class="badge badge-priority-{{ item.priority }}">{{ item.get_priority_display }}</span>
+            </td>
+            <td style="color: var(--text-secondary); font-size: 0.8rem;">
+              {{ item.due_date|date:"Y-m-d H:i"|default:"Not specified" }}
+            </td>
+            <td style="text-align: right;">
+              <button type="button" class="btn btn-sm btn-primary" onclick="claimWorkItem({{ item.id }}, this)">
+                Claim Item
+              </button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div style="padding: 2rem; text-align: center; color: var(--text-muted); font-size: 0.9rem;">
+      ✅ No unassigned urgent items pending. All priority tickets have active owners.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Section 2: Awaiting My Approval (Lead Action Queue) -->
+<div class="card" style="border-top: 3px solid var(--color-purple);">
+  <div class="card-header">
+    <h2 class="card-title" style="color: var(--color-purple-text);">
+      ✍️ Awaiting Lead Sign-off & Approval
+    </h2>
+    <span style="font-size: 0.8rem; color: var(--text-secondary);">Items completed by members requiring your review</span>
+  </div>
+  <div class="card-body" style="padding: 0;">
+    {% if awaiting_approval %}
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th style="width: 80px;">ID</th>
+            <th>Title</th>
+            <th>Team</th>
+            <th>Submitted By</th>
+            <th>Priority</th>
+            <th>Version</th>
+            <th style="text-align: right;">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in awaiting_approval %}
+          <tr>
+            <td><a href="{% url 'work_item_detail' item.id %}" style="font-family: var(--font-mono); font-weight: 600;">#{{ item.id }}</a></td>
+            <td>
+              <a href="{% url 'work_item_detail' item.id %}" style="font-weight: 600; color: var(--text-primary);">
+                {{ item.title }}
+              </a>
+            </td>
+            <td><span class="badge badge-type">{{ item.team.name }}</span></td>
+            <td style="color: var(--text-secondary);">
+              {{ item.assignee.username|default:item.creator.username }}
+            </td>
+            <td><span class="badge badge-priority-{{ item.priority }}">{{ item.get_priority_display }}</span></td>
+            <td style="font-family: var(--font-mono); color: var(--text-muted);">v{{ item.version }}</td>
+            <td style="text-align: right;">
+              <a href="{% url 'work_item_detail' item.id %}" class="btn btn-sm btn-success">
+                Review & Approve
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div style="padding: 2rem; text-align: center; color: var(--text-muted); font-size: 0.9rem;">
+      ✨ No items awaiting your approval at this time.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Section 3: Assigned to Me -->
+<div class="card" style="border-top: 3px solid var(--color-brand);">
+  <div class="card-header">
+    <h2 class="card-title" style="color: var(--color-brand);">
+      👤 Assigned to Me
+    </h2>
+    <a href="{% url 'work_item_list' %}?assignee=me" style="font-size: 0.8rem;">View all my tickets &rarr;</a>
+  </div>
+  <div class="card-body" style="padding: 0;">
+    {% if assigned_to_me %}
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th style="width: 80px;">ID</th>
+            <th>Title</th>
+            <th>Team</th>
+            <th>Type</th>
+            <th>Priority</th>
+            <th>Status</th>
+            <th>Due Date</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in assigned_to_me %}
+          <tr>
+            <td><a href="{% url 'work_item_detail' item.id %}" style="font-family: var(--font-mono); font-weight: 600;">#{{ item.id }}</a></td>
+            <td>
+              <a href="{% url 'work_item_detail' item.id %}" style="font-weight: 600; color: var(--text-primary);">
+                {{ item.title }}
+              </a>
+            </td>
+            <td><span class="badge badge-type">{{ item.team.name }}</span></td>
+            <td><span class="badge badge-type">{{ item.get_type_display }}</span></td>
+            <td><span class="badge badge-priority-{{ item.priority }}">{{ item.get_priority_display }}</span></td>
+            <td><span class="badge badge-status-{{ item.status }}">{{ item.get_status_display }}</span></td>
+            <td style="color: var(--text-secondary); font-size: 0.8rem;">
+              {{ item.due_date|date:"Y-m-d H:i"|default:"None" }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div style="padding: 2rem; text-align: center; color: var(--text-muted); font-size: 0.9rem;">
+      You currently have no open work items assigned to you. Pick up tickets from the Unassigned queue above!
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
