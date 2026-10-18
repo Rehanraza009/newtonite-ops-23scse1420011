@@ -280,7 +280,7 @@ tests/test_concurrency_and_locking.py::test_concurrent_claims_exactly_one_succee
 
 To safely publish this project to your designated repository:
 
-1. Create a private or public GitHub repository named: **`newtonite-ops-<my-roll-number>`** (replace `<my-roll-number>` with your actual university roll number).
+1. Create a private or public GitHub repository named: **`newtonite-ops-23scse1420011`** 
 2. Ensure you do **NOT** commit any `.env` file containing local credentials. `.gitignore` is already configured to exclude `.env`, `.venv`, and `__pycache__`.
 3. Run the following Git commands in your terminal:
 
@@ -289,6 +289,6 @@ git init
 git add .
 git commit -m "feat: complete Newtonite Operations Hub implementation with full test suite"
 git branch -M main
-git remote add origin https://github.com/<your-github-username>/newtonite-ops-<my-roll-number>.git
+git remote add origin https://github.com/Rehanraza009/newtonite-ops-23scse1420011.git
 git push -u origin main
 ```
